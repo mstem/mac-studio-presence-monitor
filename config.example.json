@@ -1,0 +1,8 @@
+{
+  "slack_webhook_url": "",
+  "idle_threshold_seconds": 600,
+  "device_names": {
+    "macbook-pro-3": "Matt",
+    "joe-work-laptop": "Joe"
+  }
+}
