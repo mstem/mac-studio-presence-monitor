@@ -9,9 +9,11 @@ import re
 import subprocess
 import sys
 import urllib.request
+from datetime import datetime, timezone
 
 CONFIG_PATH = os.environ.get("MONITOR_CONFIG", "/usr/local/etc/mac-studio-monitor/config.json")
 STATE_PATH = os.environ.get("MONITOR_STATE", "/usr/local/etc/mac-studio-monitor/state.json")
+AUDIT_LOG_PATH = os.environ.get("MONITOR_AUDIT_LOG", "/usr/local/var/log/mac-studio-presence.jsonl")
 
 TAILSCALE_CGNAT = ipaddress.ip_network("100.64.0.0/10")
 TAILSCALE_HOSTNAME_RE = re.compile(r"^([\w-]+)\.[\w.-]*\.ts\.net$", re.IGNORECASE)
@@ -89,6 +91,16 @@ def person_name(device, config):
     return config.get("device_names", {}).get(device, device)
 
 
+def log_event(event, person):
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event": event,
+        "person": person,
+    }
+    with open(AUDIT_LOG_PATH, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
 def notify(config, text):
     webhook = config.get("slack_webhook_url")
     if not webhook:
@@ -125,7 +137,8 @@ def main():
         if sid not in sessions:
             initial_status = "idle" if info["idle_seconds"] >= idle_threshold else "active"
             if not first_run:
-                notify(config, f":red_circle: *{info['person']}* started a session on Evens's Mac Studio")
+                notify(config, f":red_circle: *{info['person']}* started a session on philanthrobot")
+                log_event("start", info["person"])
             sessions[sid] = {"person": info["person"], "status": initial_status}
 
     # Idle / active transitions
@@ -134,10 +147,12 @@ def main():
         if not st:
             continue
         if info["idle_seconds"] >= idle_threshold and st["status"] == "active":
-            notify(config, f":crescent_moon: *{st['person']}* has gone idle on the Mac Studio")
+            notify(config, f":crescent_moon: *{st['person']}* has gone idle on philanthrobot")
+            log_event("idle", st["person"])
             st["status"] = "idle"
         elif info["idle_seconds"] < idle_threshold and st["status"] == "idle":
-            notify(config, f":red_circle: *{st['person']}* is active again on the Mac Studio")
+            notify(config, f":red_circle: *{st['person']}* is active again on philanthrobot")
+            log_event("active", st["person"])
             st["status"] = "active"
 
     # Disconnected sessions
@@ -145,7 +160,8 @@ def main():
         if sid not in current:
             st = sessions.pop(sid)
             if not first_run:
-                notify(config, f":large_green_circle: *{st['person']}* disconnected from the Mac Studio")
+                notify(config, f":large_green_circle: *{st['person']}* disconnected from philanthrobot")
+                log_event("end", st["person"])
 
     state["initialized"] = True
     save_json(STATE_PATH, state)
